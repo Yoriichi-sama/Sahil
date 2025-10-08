@@ -18,7 +18,7 @@ import (
 const (
 	SCHEDULE_DIR = "NEET_Schedule"
 	STATE_FILE   = "schedule_state.json"
-	CONFIG_FILE  = "config.json" 
+	CONFIG_FILE  = "config.json" // Added back for configuration persistence
 	TIME_FORMAT  = "2006-01-02" 
 	
 	BREAK_MINUTES = 10 
@@ -71,10 +71,6 @@ type ChapterWorkload struct {
 	Difficulty      float64 `json:"difficulty"` 
 	PriorityScore   float64 `json:"priority_score"`
 	
-	// NEW Adaptive Metrics
-	SuccessRate     float64 `json:"success_rate"` // 0.0 to 1.0 (0.5 default)
-	Attempts        int     `json:"attempts"`     // Total sessions scheduled for this chapter
-	
 	// Revision Metrics
 	IsStudyCompleted bool   `json:"is_study_completed"`
 	RevisionCount    int    `json:"revision_count"`
@@ -100,90 +96,28 @@ type SessionProgress struct {
 }
 
 // Simplified NEET Syllabus Data for demonstration
-
-
 var syllabusData = map[string]map[string]map[string]float64{
 	"Physics": {
-		"Units & Measurements":                         map[string]float64{"weight": 0.02, "difficulty": 2.0, "time_est_hrs": 6.0},
-		"Kinematics (1D & 2D)":                         map[string]float64{"weight": 0.08, "difficulty": 3.0, "time_est_hrs": 18.0},
-		"Laws of Motion & Friction":                   map[string]float64{"weight": 0.09, "difficulty": 4.0, "time_est_hrs": 14.0},
-		"Work, Energy & Power":                        map[string]float64{"weight": 0.07, "difficulty": 4.0, "time_est_hrs": 12.0},
-		"Centre of Mass & Collisions":                 map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 8.0},
-		"Rotational Motion & Moment of Inertia":       map[string]float64{"weight": 0.05, "difficulty": 4.0, "time_est_hrs": 12.0},
-		"Simple Harmonic Motion":                      map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Fluid Mechanics":                             map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 8.0},
-		"Thermodynamics & Kinetic Theory":             map[string]float64{"weight": 0.07, "difficulty": 5.0, "time_est_hrs": 14.0},
-		"Oscillations & Waves":                        map[string]float64{"weight": 0.04, "difficulty": 3.5, "time_est_hrs": 10.0},
-		"Electrostatics":                              map[string]float64{"weight": 0.07, "difficulty": 4.0, "time_est_hrs": 12.0},
-		"Current Electricity":                         map[string]float64{"weight": 0.06, "difficulty": 3.5, "time_est_hrs": 10.0},
-		"Magnetism & Magnetic Effects of Current":     map[string]float64{"weight": 0.05, "difficulty": 4.0, "time_est_hrs": 10.0},
-		"Electromagnetic Induction & AC":              map[string]float64{"weight": 0.05, "difficulty": 4.0, "time_est_hrs": 10.0},
-		"Electromagnetic Waves":                       map[string]float64{"weight": 0.02, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"Geometrical Optics":                          map[string]float64{"weight": 0.04, "difficulty": 3.0, "time_est_hrs": 10.0},
-		"Wave Optics":                                 map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Modern Physics (Photoelectric, Atomic, Nuclear)": map[string]float64{"weight": 0.06, "difficulty": 4.5, "time_est_hrs": 12.0},
-		"Semiconductors & Electronic Devices":         map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Communication Systems (Basics)":              map[string]float64{"weight": 0.02, "difficulty": 3.0, "time_est_hrs": 6.0},
+		"Kinematics":          {"weight": 0.08, "difficulty": 3.0, "time_est_hrs": 10.0},
+		"Laws of Motion":      {"weight": 0.10, "difficulty": 4.0, "time_est_hrs": 12.0},
+		"Thermodynamics":      {"weight": 0.12, "difficulty": 5.0, "time_est_hrs": 14.0},
+		"Optics":              {"weight": 0.15, "difficulty": 4.0, "time_est_hrs": 16.0},
 	},
-
 	"Chemistry": {
-		// Physical
-		"Basic Concepts & Stoichiometry":              map[string]float64{"weight": 0.03, "difficulty": 2.5, "time_est_hrs": 8.0},
-		"Atomic Structure & Electronic Configuration": map[string]float64{"weight": 0.04, "difficulty": 3.0, "time_est_hrs": 8.0},
-		"Chemical Bonding & Molecular Structure":     map[string]float64{"weight": 0.06, "difficulty": 3.5, "time_est_hrs": 15.0},
-		"States of Matter (Gases, Liquids, Solids)":  map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 8.0},
-		"Thermodynamics & Chemical Energetics":       map[string]float64{"weight": 0.05, "difficulty": 4.0, "time_est_hrs": 12.0},
-		"Chemical Equilibrium (incl. Ionic & Solubility)": map[string]float64{"weight": 0.05, "difficulty": 4.0, "time_est_hrs": 10.0},
-		"Chemical Kinetics":                          map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Electrochemistry":                           map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Surface Chemistry":                           map[string]float64{"weight": 0.01, "difficulty": 2.5, "time_est_hrs": 4.0},
-
-		// Inorganic
-		"Periodic Table & Periodicity":               map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"Hydrogen & Its Compounds":                   map[string]float64{"weight": 0.01, "difficulty": 2.5, "time_est_hrs": 4.0},
-		"S-block Elements":                           map[string]float64{"weight": 0.02, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"P-block Elements":                           map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 10.0},
-		"D & F Block Elements (Transition Metals, Lanthanoids/Actinoids)": map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Coordination Compounds":                     map[string]float64{"weight": 0.02, "difficulty": 3.5, "time_est_hrs": 6.0},
-		"Extraction & Metallurgy":                    map[string]float64{"weight": 0.01, "difficulty": 2.5, "time_est_hrs": 4.0},
-		"Qualitative Inorganic Analysis":             map[string]float64{"weight": 0.02, "difficulty": 3.0, "time_est_hrs": 6.0},
-
-		// Organic
-		"Basics of Organic Chemistry & Mechanisms":   map[string]float64{"weight": 0.04, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Hydrocarbons (Alkanes, Alkenes, Alkynes, Aromatics)": map[string]float64{"weight": 0.06, "difficulty": 4.0, "time_est_hrs": 12.0},
-		"Haloalkanes & Haloarenes":                   map[string]float64{"weight": 0.02, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"Alcohols, Phenols & Ethers":                 map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Aldehydes, Ketones & Carboxylic Acids":      map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Amines & Diazonium Chemistry":               map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Biomolecules (Carbs, Proteins, Lipids, Vitamins)": map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 8.0},
-		"Polymers & Practical Chemistry":             map[string]float64{"weight": 0.01, "difficulty": 2.5, "time_est_hrs": 4.0},
+		"Chemical Bonding":      {"weight": 0.12, "difficulty": 3.0, "time_est_hrs": 15.0},
+		"Thermodynamics (Chem)": {"weight": 0.09, "difficulty": 4.0, "time_est_hrs": 12.0},
+		"Organic Chemistry":     {"weight": 0.18, "difficulty": 5.0, "time_est_hrs": 20.0},
+		"P-Block Elements":      {"weight": 0.10, "difficulty": 3.0, "time_est_hrs": 10.0},
 	},
-
 	"Biology": {
-		// Botany
-		"Diversity of Living Organisms (Classification)": map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"Plant Kingdom & Morphology":                  map[string]float64{"weight": 0.02, "difficulty": 2.5, "time_est_hrs": 6.0},
-		"Cell Structure & Cell Cycle":                 map[string]float64{"weight": 0.04, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"Plant Physiology (Transport, Nutrition, Growth)": map[string]float64{"weight": 0.05, "difficulty": 3.5, "time_est_hrs": 10.0},
-		"Photosynthesis & Respiration (Plant)":        map[string]float64{"weight": 0.04, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Plant Reproduction & Development":            map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 6.0},
-
-		// Zoology / Human biology
-		"Human Physiology: Circulatory System & Immunity": map[string]float64{"weight": 0.06, "difficulty": 4.0, "time_est_hrs": 12.0},
-		"Human Physiology: Respiratory System":        map[string]float64{"weight": 0.03, "difficulty": 3.0, "time_est_hrs": 6.0},
-		"Excretory & Endocrine Systems":              map[string]float64{"weight": 0.04, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Nervous System & Sense Organs":               map[string]float64{"weight": 0.05, "difficulty": 4.0, "time_est_hrs": 10.0},
-		"Human Reproduction & Reproductive Health":    map[string]float64{"weight": 0.04, "difficulty": 3.5, "time_est_hrs": 8.0},
-		"Genetics & Evolution (Mendelian + Molecular)": map[string]float64{"weight": 0.06, "difficulty": 5.0, "time_est_hrs": 18.0},
-		"Biotechnology & Its Applications":            map[string]float64{"weight": 0.03, "difficulty": 3.5, "time_est_hrs": 6.0},
-		"Ecology & Environment (Ecosystems, Conservation)": map[string]float64{"weight": 0.04, "difficulty": 3.0, "time_est_hrs": 8.0},
-		"Diversity of Animals (Invertebrates & Vertebrates)": map[string]float64{"weight": 0.02, "difficulty": 2.5, "time_est_hrs": 6.0},
-		"Practical Skills, Diagrams & Experimental Interpretation": map[string]float64{"weight": 0.02, "difficulty": 3.0, "time_est_hrs": 8.0},
+		"Human Physiology":      {"weight": 0.20, "difficulty": 4.0, "time_est_hrs": 25.0},
+		"Plant Physiology":      {"weight": 0.15, "difficulty": 3.0, "time_est_hrs": 20.0},
+		"Genetics and Evolution":{"weight": 0.25, "difficulty": 5.0, "time_est_hrs": 30.0},
+		"Ecology":               {"weight": 0.10, "difficulty": 2.0, "time_est_hrs": 10.0},
 	},
 }
 
-
-var rawConfig Config
+var rawConfig Config // Global config variable
 
 // --- Persistence Utility Functions (Configuration) ---
 
@@ -206,8 +140,8 @@ func loadConfig() Config {
 	// Default configuration (used if config.json is not found)
 	defaultConfig := Config{
 		StartDate:       time.Now().Format(TIME_FORMAT), 
-		SyllabusEndDate: "2026-06-30",
-		ExamDate:        "2026-07-28",
+		SyllabusEndDate: "2026-03-05", // Default from your input
+		ExamDate:        "2026-05-03", // Default from your input
 
 		DailyStudyHrs:   6.0,
 		MaxSessionHrs:   1.0,
@@ -221,7 +155,8 @@ func loadConfig() Config {
 		var config Config
 		err = json.Unmarshal(data, &config)
 		if err == nil {
-			config.StartDate = time.Now().Format(TIME_FORMAT)
+            // Update StartDate to today's date upon loading
+			config.StartDate = time.Now().Format(TIME_FORMAT) 
 			return config
 		}
 		fmt.Printf("[ERROR] Could not decode JSON config file: %v. Using defaults.\n", err)
@@ -229,8 +164,27 @@ func loadConfig() Config {
 		fmt.Printf("[ERROR] Could not read config file: %v. Using defaults.\n", err)
 	}
 	
+	// If the file doesn't exist, save the default config for next time
+	saveConfig(defaultConfig) 
 	return defaultConfig
 }
+
+// --- Schedule Reset Function (FIXED) ---
+
+// deleteScheduleState deletes only the state file, preserving daily plan files.
+func deleteScheduleState() {
+    fmt.Println("\n[RESET] Deleting schedule state file only to force regeneration...")
+    
+    // 1. Delete the state file (schedule_state.json)
+    if err := os.Remove(STATE_FILE); err != nil && !os.IsNotExist(err) {
+        fmt.Printf("[WARNING] Could not delete state file %s: %v\n", STATE_FILE, err)
+    } else if err == nil {
+        fmt.Printf("[INFO] Deleted %s. Historical session files preserved.\n", STATE_FILE)
+    }
+    
+    fmt.Println("[SUCCESS] Schedule state reset. Please run [3] RE-GENERATE.")
+}
+
 
 // --- Persistence Utility Functions (Progress) ---
 
@@ -431,34 +385,17 @@ func calculateInitialRevisionInterval(difficulty float64) int {
 
 // updateChapterPerformance Adjusts a chapter's performance metrics based on the outcome of a session.
 func updateChapterPerformance(wl ChapterWorkload, success bool) ChapterWorkload {
-	// 1. Update Attempts and SuccessRate
-	if wl.Attempts == 0 {
-		wl.SuccessRate = 0.5 
-	}
-	
-	newAttempts := wl.Attempts + 1
-	var delta float64 
 	
 	if success {
-		delta = 1.0 
 		// Decrease difficulty slightly on success (min 1.0)
 		wl.Difficulty = math.Max(1.0, wl.Difficulty - 0.1) 
 	} else {
-		delta = 0.0 
 		// Increase difficulty more significantly on failure (max 5.0)
 		wl.Difficulty = math.Min(5.0, wl.Difficulty + 0.3) 
 	}
 	
-	// Rolling average for SuccessRate
-	oldSum := wl.SuccessRate * float64(wl.Attempts)
-	newSuccessRate := (oldSum + delta) / float64(newAttempts)
-	
-	wl.SuccessRate = newSuccessRate
-	wl.Attempts = newAttempts
-	
-	// 2. Update Priority Score
-	// New formula: (Weight * 0.4) + (Difficulty * 0.3) + ((1 - SuccessRate) * 0.3)
-	wl.PriorityScore = (wl.Weightage * 0.4) + (wl.Difficulty * 0.3) + ((1.0 - wl.SuccessRate) * 0.3)
+	// Update Priority Score
+	wl.PriorityScore = (wl.Weightage * 0.6) + (wl.Difficulty * 0.4)
 	
 	return wl
 }
@@ -485,8 +422,7 @@ func calculateQuotas(state *ScheduleState) []ChapterWorkload {
 					RemainingTime: initialTime,
 					Weightage: data["weight"],
 					Difficulty: initialDifficulty,
-					SuccessRate: 0.5, // NEW: Initial value
-					Attempts: 0,       // NEW: Initial value
+					PriorityScore: (data["weight"] * 0.6) + (initialDifficulty * 0.4), // Initial calculation
 					IsStudyCompleted: false, 
 					RevisionCount: 0,
 					NextRevisionDate: "",
@@ -494,13 +430,8 @@ func calculateQuotas(state *ScheduleState) []ChapterWorkload {
 				}
 			}
             
-            // Recalculate Priority Score and Weighted Time for all chapters
-            // This ensures the report and scheduler use the most current priority based on performance
-			if wl.Attempts == 0 {
-				wl.PriorityScore = (wl.Weightage * 0.6) + (wl.Difficulty * 0.4)
-			} else {
-				wl.PriorityScore = (wl.Weightage * 0.4) + (wl.Difficulty * 0.3) + ((1.0 - wl.SuccessRate) * 0.3)
-			}
+            // Recalculate Priority Score based on current Difficulty
+			wl.PriorityScore = (wl.Weightage * 0.6) + (wl.Difficulty * 0.4)
 
 
 			if !wl.IsStudyCompleted && wl.RemainingTime > 0.001 {
@@ -577,11 +508,23 @@ func generateSchedule() {
 
 	state := loadState()
 	
+	// FIX: Ensure generation starts from today if the last scheduled date is in the past
+	realToday := time.Now().Truncate(24 * time.Hour)
+	stateDate, _ := time.Parse(TIME_FORMAT, state.LastScheduledDate)
+	syllabusEndDate, _ := time.Parse(TIME_FORMAT, rawConfig.SyllabusEndDate)
+    
+    // If the state is lagging behind today, force the start date to today
+    if stateDate.Before(realToday) {
+        state.LastScheduledDate = realToday.Format(TIME_FORMAT) 
+        saveState(state) 
+        fmt.Printf("[FIX] Schedule path reset detected. Starting generation from today: %s\n", realToday.Format(TIME_FORMAT))
+    }
+	
 	allChapters := calculateQuotas(&state)
 	allChapters = prioritizeChapters(allChapters)
 	
 	currentDate, _ := time.Parse(TIME_FORMAT, state.LastScheduledDate)
-	syllabusEndDate, _ := time.Parse(TIME_FORMAT, rawConfig.SyllabusEndDate)
+	
 
 	if state.TotalRemainingTime <= 0.001 && len(getDueRevisions(state, currentDate)) == 0 && currentDate.After(syllabusEndDate) {
 		fmt.Println("[SUCCESS] All chapters are studied and all revisions are up-to-date. No new schedule generated.")
@@ -639,17 +582,16 @@ func generateSchedule() {
 				
 				hoursAssigned += revDuration
 				
-				// Revisions scheduled today must update their next due date immediately for future days' planning
-				// Note: We update the *plan* state here. The *actual* state update happens in runStudyTimer upon completion.
-				revChapter.RevisionCount++ 
+				revChapter.RevisionCount++
+				
 				if revChapter.RevisionCount < MAX_REVISIONS {
 					nextInterval := revChapter.InitialRevisionIntervalDays * (revChapter.RevisionCount + 1)
 					revChapter.NextRevisionDate = currentDate.AddDate(0, 0, nextInterval).Format(TIME_FORMAT)
 				} else {
 					revChapter.NextRevisionDate = "" 
 				}
-				state.Workload[revChapter.ID] = revChapter
 				
+				state.Workload[revChapter.ID] = revChapter 
 				dueRevisions = dueRevisions[1:] 
 			}
 			
@@ -679,6 +621,7 @@ func generateSchedule() {
 				
 				currentChapter := activeStudyChapters[foundChapterIndex]
 				
+				// This line applies the MaxSessionHrs and the RemainingTime
 				sessionDuration := math.Min(rawConfig.MaxSessionHrs, currentChapter.RemainingTime)
 				if hoursAssigned+sessionDuration > dailyTotalStudyHrs {
 					sessionDuration = dailyTotalStudyHrs - hoursAssigned
@@ -709,6 +652,7 @@ func generateSchedule() {
 					currentChapter.IsStudyCompleted = true
 					currentChapter.NextRevisionDate = currentDate.AddDate(0, 0, currentChapter.InitialRevisionIntervalDays).Format(TIME_FORMAT)
 					
+					// Remove the completed chapter from the active list
 					activeStudyChapters = append(activeStudyChapters[:foundChapterIndex], activeStudyChapters[foundChapterIndex+1:]...)
 					sort.Slice(activeStudyChapters, func(i, j int) bool {
 						return activeStudyChapters[i].PriorityScore > activeStudyChapters[j].PriorityScore
@@ -725,6 +669,9 @@ func generateSchedule() {
 				Status:   "Pending",
 			})
 		}
+		
+		// If today's plan already exists, read it first, then merge pending status 
+		// (This is only relevant if running generate multiple times in one day, which is fine)
 		
 		writeDayPlan(currentDate, dailySessions)
 		currentDate = currentDate.AddDate(0, 0, 1)
@@ -771,7 +718,7 @@ func adjustWorkload(missedSessions []Session, auditDate time.Time) {
 		return
 	}
 
-	// 1. Update workload, difficulty, and Success Rate for missed sessions
+	// 1. Update workload, difficulty, and Priority Score for missed sessions
 	for _, session := range missedSessions {
 		chID := session.ChapterID
 		duration := session.Duration
@@ -779,15 +726,15 @@ func adjustWorkload(missedSessions []Session, auditDate time.Time) {
 		if chID != "" {
 			if workload, ok := state.Workload[chID]; ok {
                 
-                // NEW: Update performance based on failure (sets success=false)
+                // Update performance based on failure
                 workload = updateChapterPerformance(workload, false) 
                 
 				if session.Type == "Revision" {
-					// Pushes revision back one day, resetting the count decrement (which updateChapterPerformance already handled)
+					// Pushes revision back one day, resetting the count decrement 
 					workload.NextRevisionDate = auditDate.AddDate(0, 0, 1).Format(TIME_FORMAT) 
 					workload.RevisionCount-- 
 					workload.RevisionCount = int(math.Max(0, float64(workload.RevisionCount)))
-					fmt.Printf("  -> Missed Revision for %s. Resetting due date (SR: %.2f).\n", workload.Chapter, workload.SuccessRate)
+					fmt.Printf("  -> Missed Revision for %s. Resetting due date (New Priority: %.2f).\n", workload.Chapter, workload.PriorityScore)
 				} else { 
 					// Adds time back to the remaining time
 					workload.RemainingTime += duration
@@ -798,17 +745,6 @@ func adjustWorkload(missedSessions []Session, auditDate time.Time) {
 		}
 	}
     
-    // 2. DYNAMIC DAILY HOUR ADJUSTMENT (Only triggered if a significant number of sessions were missed)
-    if len(missedSessions) > 2 {
-        if rawConfig.DailyStudyHrs > 4.0 {
-            rawConfig.DailyStudyHrs = math.Max(4.0, rawConfig.DailyStudyHrs - 0.5)
-            fmt.Printf("\n[AUTOPILOT] Due to %d missed study/revision sessions on %s, Daily Study Hours were automatically **REDUCED to %.1f hrs** to prevent burnout.\n", len(missedSessions), auditDate.Format(TIME_FORMAT), rawConfig.DailyStudyHrs)
-            saveConfig(rawConfig)
-        } else {
-            fmt.Println("\n[AUTOPILOT] Significant sessions missed, but daily hours are already at minimum (4.0 hrs). No further reduction.")
-        }
-    }
-
 	restartDate := auditDate.AddDate(0, 0, 1) 
 	state.LastScheduledDate = restartDate.Format(TIME_FORMAT)
 	
@@ -825,26 +761,14 @@ type command struct {
 }
 
 // inputReader runs in a separate goroutine and sends commands non-blockingly.
-func inputReader(cmdChan chan<- command, stopChan <-chan bool) {
+func inputReader(cmdChan chan<- command) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		select {
-		case <-stopChan:
-			return 
-		default:
-		}
-		
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
 		
 		if input != "" {
-			select {
-			case cmdChan <- command{action: input}:
-			case <-stopChan:
-				return
-			default: 
-				// If cmdChan is full, skip the command to prevent blocking the input routine.
-			}
+			cmdChan <- command{action: input}
 		}
 	}
 }
@@ -864,7 +788,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 	} else {
 		startTime = time.Now().Add(time.Duration(-initialElapsed) * time.Second)
 		fmt.Printf("\n[RESUME] Resuming %s session. %s/%s complete. Press 'p' to pause.\n", session.Type, time.Duration(initialElapsed)*time.Second, time.Duration(totalSeconds)*time.Second)
-        // FIX: Immediate redraw on resume
         remaining := totalSeconds - elapsedSeconds
         fmt.Printf("\r[TIMER] %s - Remaining: %s | Status: RUNNING  ", session.Chapter, time.Duration(remaining)*time.Second)
 	}
@@ -875,10 +798,9 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 	ticker := time.NewTicker(time.Second) 
 	saveTicker := time.NewTicker(PROGRESS_SAVE_INTERVAL)
 	stopTimerChan := make(chan bool) 
-	stopInputChan := make(chan bool) 
-	cmdChan := make(chan command, 1) 
+	cmdChan := make(chan command) 
 	
-	go inputReader(cmdChan, stopInputChan) 
+	go inputReader(cmdChan) 
 
 	// Persistence Goroutine
 	go func() {
@@ -914,7 +836,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 					paused = false
 					startTime = time.Now().Add(time.Duration(-elapsedSeconds) * time.Second)
 					
-					// FIX: Immediately update the timer display upon resume
 					remaining := totalSeconds - elapsedSeconds
 					fmt.Printf("\r[TIMER] %s - Remaining: %s | Status: RUNNING  ", session.Chapter, time.Duration(remaining)*time.Second)
 				}
@@ -928,7 +849,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 				fmt.Println("\n[ACTION] Session marked as MISSED. This will be rescheduled.")
 				finished = true
 			default:
-				// Only print help message if paused, otherwise ignore input
 				if paused {
 					fmt.Print("Invalid command. Options: p, r, f, m. ")
 				}
@@ -941,7 +861,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 
 			remaining := totalSeconds - elapsedSeconds
 			
-			// Display update
 			if elapsedSeconds%10 == 0 || elapsedSeconds == 1 || remaining <= 5 {
 				status := "RUNNING"
 				if paused { status = "PAUSED" }
@@ -956,7 +875,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 	} 
 	
 	// Clean up goroutines
-	close(stopInputChan) 
 	close(stopTimerChan)
 	ticker.Stop()
 	
@@ -1021,10 +939,9 @@ func runBreakTimer(durationMins int) {
 	paused := false
 	
 	ticker := time.NewTicker(time.Second)
-	stopInputChan := make(chan bool) 
-	cmdChan := make(chan command, 1) 
+	cmdChan := make(chan command) 
 	
-	go inputReader(cmdChan, stopInputChan)
+	go inputReader(cmdChan)
 	
 	fmt.Printf("\n[BREAK] Starting %d minute break. Press 'q' to skip, 'p' to pause. ☕️\n", durationMins)
 	
@@ -1066,7 +983,6 @@ func runBreakTimer(durationMins int) {
 	}
 	
 	ticker.Stop()
-	close(stopInputChan)
 	
 	if elapsedSeconds >= totalSeconds {
 		fmt.Println("\n\n[BREAK] Break finished! Time to select your next session.")
@@ -1075,6 +991,7 @@ func runBreakTimer(durationMins int) {
 
 // runTimerCLI implements the interactive timer utility for study sessions.
 func runTimerCLI() {
+	rawConfig = loadConfig() // Ensure the latest config is loaded before any action
 	realToday := time.Now().Truncate(24 * time.Hour)
 	fmt.Printf("\n--- Timer CLI for %s ---\n", realToday.Format(TIME_FORMAT))
 
@@ -1096,6 +1013,7 @@ func runTimerCLI() {
 		fmt.Printf("[RE-BALANCING] Total %d missed sessions detected. Adjusting workload and regenerating path from TODAY (%s)...\n", len(missedSessionsAcrossDays), realToday.Format(TIME_FORMAT))
 		adjustWorkload(missedSessionsAcrossDays, realToday.AddDate(0, 0, -1)) 
 	} else if lastScheduled.Before(realToday) {
+		// If schedule is lagging behind today's date, force regeneration from today
 		fmt.Println("[RE-BALANCING] Schedule is behind. Regenerating path to ensure today is planned.")
 		state.LastScheduledDate = realToday.Format(TIME_FORMAT) // Force regeneration from today
 		saveState(state)
@@ -1234,6 +1152,7 @@ func runTimerCLI() {
 
 // runFullReport displays the current progress and workload status.
 func runFullReport() {
+	rawConfig = loadConfig() // Ensure the latest config is loaded before any action
 	fmt.Println("\n--- FULL PROGRESS REPORT ---")
 
 	state := loadState()
@@ -1249,6 +1168,20 @@ func runFullReport() {
 		fmt.Println("[INFO] No workload initialized. Please run option [3] RE-GENERATE first.")
 		return
 	}
+    
+    if totalWorkload < 0.001 {
+        today := time.Now().Truncate(24 * time.Hour)
+        if len(getDueRevisions(state, today)) == 0 {
+            fmt.Printf("🎯 **Syllabus Target Date:** %s (Net Study Days Remaining: %d)\n", rawConfig.SyllabusEndDate, netStudyDays)
+            fmt.Println("⏳ **Total Remaining Workload:** 0.00 WT (0.0 Study Hrs)")
+            fmt.Println("📅 **Required Daily Quota:** 0.00 WT (Weighted Time)")
+            fmt.Println("-----------------------------------------------------------------")
+            fmt.Println("🎉 **All initial study and scheduled revisions are complete!**")
+            fmt.Println("-----------------------------------------------------------------")
+            return
+        }
+    }
+
 
 	fmt.Printf("🎯 **Syllabus Target Date:** %s (Net Study Days Remaining: %d)\n", rawConfig.SyllabusEndDate, netStudyDays)
 	fmt.Printf("⏳ **Total Remaining Workload:** %.2f WT (%.1f Study Hrs)\n", totalWorkload, totalRemainingHrs)
@@ -1299,8 +1232,8 @@ func runFullReport() {
 		fmt.Println("  -> All initial study complete! Time for revision phase.")
 	} else {
 		for _, wl := range incompleteStudyChapters {
-			fmt.Printf("  - [Prio: %.2f | %.1f hrs left] %s: %s (Diff: %.1f, SR: %.2f)\n", 
-				wl.PriorityScore, wl.RemainingTime, wl.Subject, wl.Chapter, wl.Difficulty, wl.SuccessRate)
+			fmt.Printf("  - [Prio: %.2f | %.1f hrs left] %s: %s (Diff: %.1f)\n", 
+				wl.PriorityScore, wl.RemainingTime, wl.Subject, wl.Chapter, wl.Difficulty)
 		}
 	}
 
@@ -1309,8 +1242,8 @@ func runFullReport() {
 		fmt.Println("  -> No revisions are currently due for today.")
 	} else {
 		for _, wl := range revisionDueChapters {
-			fmt.Printf("  - [DUE | Rev #%d of %d] %s: %s (Priority: %.2f, SR: %.2f)\n", 
-				wl.RevisionCount + 1, MAX_REVISIONS, wl.Subject, wl.Chapter, wl.PriorityScore, wl.SuccessRate)
+			fmt.Printf("  - [DUE | Rev #%d of %d] %s: %s (Priority: %.2f)\n", 
+				wl.RevisionCount + 1, MAX_REVISIONS, wl.Subject, wl.Chapter, wl.PriorityScore)
 		}
 	}
     
@@ -1331,14 +1264,20 @@ func runFullReport() {
 	
 	// Print a general summary of completion
 	total := float64(len(allChapters))
-	completed := float64(len(completedChapters))
+	completed := 0.0
+    for _, wl := range allChapters {
+        if wl.IsStudyCompleted {
+            completed++
+        }
+    }
+
 	studyProgress := 100.0
 	if total > 0 {
 		studyProgress = (completed / total) * 100
 	}
 	
 	fmt.Println("\n-----------------------------------------------------------------")
-	fmt.Printf("✅ **Overall Chapter Completion:** %.1f%% (%d of %d chapters)\n", studyProgress, len(completedChapters), int(total))
+	fmt.Printf("✅ **Overall Chapter Completion:** %.1f%% (%d of %d chapters)\n", studyProgress, int(completed), int(total))
 	fmt.Println("-----------------------------------------------------------------")
 }
 
@@ -1411,17 +1350,63 @@ func readWeekday(reader *bufio.Reader, prompt string, defaultValue time.Weekday)
 func promptConfig(currentConfig Config) Config {
 	reader := bufio.NewReader(os.Stdin)
 	newConfig := currentConfig
+    
+    // Flag to track if any configuration value has changed
+    configChanged := false
+    
+    // --- Collect New Values ---
 
 	fmt.Println("\n--- Configure Scheduler Parameters ---")
 	
-	newConfig.SyllabusEndDate = readDate(reader, "Syllabus Completion Target Date", newConfig.SyllabusEndDate)
-	newConfig.ExamDate = readDate(reader, "Final Exam Date (for reference)", newConfig.ExamDate)
+	newSyllabusEndDate := readDate(reader, "Syllabus Completion Target Date", newConfig.SyllabusEndDate)
+    if newSyllabusEndDate != newConfig.SyllabusEndDate { configChanged = true }
+    newConfig.SyllabusEndDate = newSyllabusEndDate
+    
+	newExamDate := readDate(reader, "Final Exam Date (for reference)", newConfig.ExamDate)
+    if newExamDate != newConfig.ExamDate { configChanged = true }
+    newConfig.ExamDate = newExamDate
 
-	newConfig.DailyStudyHrs = readFloat(reader, "Total Daily Study Hours (Excluding Buffer/Breaks)", newConfig.DailyStudyHrs)
-	newConfig.MaxSessionHrs = readFloat(reader, "Maximum Hours per Single Session", newConfig.MaxSessionHrs)
-	newConfig.DailyBufferMins = readInt(reader, "Daily Buffer/Review Time (in minutes)", newConfig.DailyBufferMins)
+	newDailyStudyHrs := readFloat(reader, "Total Daily Study Hours (Excluding Buffer/Breaks)", newConfig.DailyStudyHrs)
+    if newDailyStudyHrs != newConfig.DailyStudyHrs { configChanged = true }
+    newConfig.DailyStudyHrs = newDailyStudyHrs
+    
+	newMaxSessionHrs := readFloat(reader, "Maximum Hours per Single Session", newConfig.MaxSessionHrs)
+    if newMaxSessionHrs != newConfig.MaxSessionHrs { configChanged = true }
+    newConfig.MaxSessionHrs = newMaxSessionHrs
+    
+	newDailyBufferMins := readInt(reader, "Daily Buffer/Review Time (in minutes)", newConfig.DailyBufferMins)
+    if newDailyBufferMins != newConfig.DailyBufferMins { configChanged = true }
+    newConfig.DailyBufferMins = newDailyBufferMins
 
-	newConfig.WeeklyRestDay = readWeekday(reader, "Weekly Rest Day (e.g., sunday)", newConfig.WeeklyRestDay)
+	newWeeklyRestDay := readWeekday(reader, "Weekly Rest Day (e.g., sunday)", newConfig.WeeklyRestDay)
+    if newWeeklyRestDay != newConfig.WeeklyRestDay { configChanged = true }
+    newConfig.WeeklyRestDay = newWeeklyRestDay
+    
+    newRestDayActivity := newConfig.RestDayActivity
+    fmt.Printf("Rest Day Activity (Current: %s): ", newConfig.RestDayActivity)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	if input != "" && input != newConfig.RestDayActivity {
+		newRestDayActivity = input
+		configChanged = true
+	}
+	newConfig.RestDayActivity = newRestDayActivity
+
+
+    // --- Apply Changes and Reset Schedule if needed ---
+
+	if configChanged {
+        rawConfig = newConfig // Update the global variable
+		saveConfig(rawConfig) // Save the new config to disk
+        
+        // **CRITICAL FIX HERE: Reset only the state file, preserving TXT files**
+        deleteScheduleState()
+        
+		fmt.Printf("\n[INFO] Configuration updated and saved. Max Session Hrs is now: %.1f hrs.\n", rawConfig.MaxSessionHrs)
+		fmt.Println("Please run **[3] RE-GENERATE** to calculate a new study path using these settings.")
+	} else {
+        fmt.Println("\n[INFO] No configuration changes detected. Schedule state retained.")
+    }
 
 	return newConfig
 }
@@ -1431,6 +1416,9 @@ func promptConfig(currentConfig Config) Config {
 func runMainMenu() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
+        // Load config at the start of the loop to ensure rawConfig is up-to-date
+		rawConfig = loadConfig() 
+        
 		fmt.Println("\n--- Adaptive NEET Scheduler Menu ---")
 		fmt.Println("[1] Start **TIMER CLI** (Daily Study)")
 		fmt.Println("[2] View **FULL REPORT** (Syllabus Status)")
@@ -1449,13 +1437,10 @@ func runMainMenu() {
 			runFullReport()
 		case "3", "generate":
 			fmt.Println("\n[ACTION] Running Schedule Generation...")
-			generateSchedule()
+			// loadState will re-initialize the full workload if STATE_FILE was deleted by option 4
+			generateSchedule() 
 		case "4", "config":
-			fmt.Println("\n[ACTION] Changing Configuration...")
-			newConfig := promptConfig(rawConfig)
-			rawConfig = newConfig
-			saveConfig(rawConfig)
-			fmt.Println("\n[INFO] Configuration updated and saved. Please RE-GENERATE the schedule (Option 3) to apply changes.")
+			promptConfig(rawConfig)
 		case "q":
 			fmt.Println("\nExiting application. Goodbye! 👋")
 			return
@@ -1468,12 +1453,11 @@ func runMainMenu() {
 // --- Main Execution Block ---
 
 func main() {
-	rawConfig = loadConfig()
-	
 	// Command-line execution for generation (e.g., `go run neet_path_builder.go generate`)
 	if len(os.Args) > 1 {
 		command := os.Args[1]
 		if command == "generate" {
+			rawConfig = loadConfig() // Load config for command-line run
 			generateSchedule()
 			return
 		}
@@ -1482,7 +1466,7 @@ func main() {
 	// Interactive CLI execution (default mode)
 	if _, err := os.Stat(SCHEDULE_DIR); os.IsNotExist(err) {
 		fmt.Printf("[SETUP REQUIRED] The '%s' directory is missing.\n", SCHEDULE_DIR)
-		fmt.Println("Please run 'go run neet_path_builder.go generate' first to create the initial schedule, or use option '3' in the menu.")
+		fmt.Println("Please run '3' (RE-GENERATE) first in the menu or use the command line: 'go run neet_path_builder.go generate'")
 	}
 	
 	runMainMenu()
