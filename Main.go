@@ -760,7 +760,8 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 					paused = false
 					startTime = time.Now().Add(time.Duration(-elapsedSeconds) * time.Second)
 					remaining := totalSeconds - elapsedSeconds
-					fmt.Printf("\r[TIMER] %s - Remaining: %s | Status: RUNNING  ", session.Chapter, time.Duration(remaining)*time.Second)
+					fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter)
+					fmt.Printf("\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
 				}
 			case "f":
 				session.Status = "Completed"
@@ -785,9 +786,8 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 					if paused {
 						status = "PAUSED"
 					}
-
-					fmt.Printf("\033[2K\r[TIMER] %s - Remaining: %s | Status: %s", 
-						session.Chapter, time.Duration(remaining)*time.Second, status)
+					fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter)
+					fmt.Printf("\033[2K\r[TIMER]  Remaining: %s | Status: %s", time.Duration(remaining)*time.Second, status)
 				if remaining <= 0 {
 					finished = true
 				}
