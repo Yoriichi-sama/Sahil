@@ -697,7 +697,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 		startTime = time.Now().Add(time.Duration(-initialElapsed) * time.Second)
 		fmt.Printf("\n[RESUME] Resuming %s session. %s/%s complete. Press 'p' to pause.\n", session.Type, time.Duration(initialElapsed)*time.Second, time.Duration(totalSeconds)*time.Second)
 		remaining := totalSeconds - elapsedSeconds
-		fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter )
 		fmt.Printf("\033[2K\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
 	}
 
@@ -726,7 +725,8 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 			}
 		}
 	}()
-
+	
+	fmt.Printf("[Timer] %s\n", session.Chapter)
 	finished := false
 	for elapsedSeconds < totalSeconds && !finished {
 		select {
@@ -761,7 +761,6 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 					paused = false
 					startTime = time.Now().Add(time.Duration(-elapsedSeconds) * time.Second)
 					remaining := totalSeconds - elapsedSeconds
-					fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter)
 					fmt.Printf("\033[2K\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
 				}
 			case "f":
@@ -787,8 +786,7 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 					if paused {
 						status = "PAUSED"
 					}
-					fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter)
-					fmt.Printf("\033[2K\r[TIMER]  Remaining: %s | Status: %s", time.Duration(remaining)*time.Second, status)
+					fmt.Printf("\033[2K\r[TIMER] Remaining: %s | Status: %s", time.Duration(remaining)*time.Second, status)
 				if remaining <= 0 {
 					finished = true
 				}
