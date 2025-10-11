@@ -697,8 +697,8 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 		startTime = time.Now().Add(time.Duration(-initialElapsed) * time.Second)
 		fmt.Printf("\n[RESUME] Resuming %s session. %s/%s complete. Press 'p' to pause.\n", session.Type, time.Duration(initialElapsed)*time.Second, time.Duration(totalSeconds)*time.Second)
 		remaining := totalSeconds - elapsedSeconds
-		fmt.Printf("\r [Timer] %s" , session.Chapter )
-		fmt.Printf("\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
+		fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter )
+		fmt.Printf("\033[2K\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
 	}
 
 	musicOn := true
@@ -762,7 +762,7 @@ func runStudyTimer(sessions []Session, sessionIndex int, initialElapsed int, tod
 					startTime = time.Now().Add(time.Duration(-elapsedSeconds) * time.Second)
 					remaining := totalSeconds - elapsedSeconds
 					fmt.Printf("\033[2K\r [Timer] %s" , session.Chapter)
-					fmt.Printf("\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
+					fmt.Printf("\033[2K\r[TIMER] Remaining: %s | Status: RUNNING  ",time.Duration(remaining)*time.Second)
 				}
 			case "f":
 				session.Status = "Completed"
