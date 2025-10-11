@@ -105,11 +105,25 @@ func startMusic() {
 		fmt.Println(ColorYellow + "[MUSIC] No music found in study_music/" + ColorReset)
 		return
 	}
-	f := files[randSource.Intn(len(files))].Name()
-	fmt.Printf(ColorMagenta+"[MUSIC] Playing: %s\n"+ColorReset, f)
-	exec.Command("mpv", "--no-video", "--quiet", "--loop", filepath.Join("study_music", f)).Start()
-}
 
+	var paths []string
+	for _, f := range files {
+		if !f.IsDir() && (filepath.Ext(f.Name()) == ".mp3" || filepath.Ext(f.Name()) == ".flac") {
+			paths = append(paths, filepath.Join("study_music", f.Name()))
+		}
+	}
+
+	if len(paths) == 0 {
+		fmt.Println(ColorYellow + "[MUSIC] No mp3 files found in study_music/" + ColorReset)
+		return
+	}
+
+	fmt.Println(ColorMagenta + "[MUSIC] Playing all files in study_music/ (looped)" + ColorReset)
+	
+	// --loop=inf will loop the playlist indefinitely
+	cmd := exec.Command("mpv", append([]string{"--no-video", "--quiet", "--loop=inf"}, paths...)...)
+	cmd.Start()
+}
 func pauseMusic()  { exec.Command("pkill", "-STOP", "mpv").Run() }
 func resumeMusic() { exec.Command("pkill", "-CONT", "mpv").Run() }
 func stopMusic()   { exec.Command("pkill", "mpv").Run() }
