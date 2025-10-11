@@ -121,7 +121,7 @@ func startMusic() {
 	fmt.Println(ColorMagenta + "[MUSIC] Playing all files in study_music/ (looped)" + ColorReset)
 	
 	// --loop=inf will loop the playlist indefinitely
-	cmd := exec.Command("mpv", append([]string{"--no-video", "--quiet", "--loop=inf"}, paths...)...)
+	cmd := exec.Command("mpv", append([]string{"--no-video", "--quiet", "--loop-playlist=inf"}, paths...)...)
 	cmd.Start()
 }
 func pauseMusic()  { exec.Command("pkill", "-STOP", "mpv").Run() }
