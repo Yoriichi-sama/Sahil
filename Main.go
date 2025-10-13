@@ -19,7 +19,7 @@ const (
 	TIME_FORMAT              = "2006-01-02"
 	SCHEDULE_DIR             = "plans"
 	CONFIG_FILE              = "config.json"
-	STATE_FILE               = "schedule_state.json"
+	STATE_FILE               = "data/schedule_state.json"
 	PROGRESS_FILE            = "session_progess.tmp"
 	REVISION_TIME_HRS        = 0.5 
 	MAX_REVISIONS            = 4   
@@ -149,7 +149,7 @@ func loadConfig() Config {
     {ID: "PH002", Subject: "Physics", Chapter: "Laws of Motion", InitialTotalTime: 15.0, Weightage: 2.0, InitialRevisionIntervalDays: 2, Difficulty: 4.0, RemainingTime: 15.0, IsStudyCompleted: false},
     {ID: "PH003", Subject: "Physics", Chapter: "Motion in a Plane", InitialTotalTime: 12.0, Weightage: 1.8, InitialRevisionIntervalDays: 4, Difficulty: 3.0, RemainingTime: 12.0, IsStudyCompleted: false},
     {ID: "PH004", Subject: "Physics", Chapter: "Work, Energy and Power", InitialTotalTime: 15.0, Weightage: 2.0, InitialRevisionIntervalDays: 3, Difficulty: 3.5, RemainingTime: 15.0, IsStudyCompleted: false},
-    {ID: "PH005", Subject: "Physics", Chapter: "System of Particles and Rotational Motion", InitialTotalTime: 12.0markMissedSessions()0, Weightage: 2.0, InitialRevisionIntervalDays: 3, Difficulty: 4.0, RemainingTime: 12.0, IsStudyCompleted: false},
+    {ID: "PH005", Subject: "Physics", Chapter: "System of Particles and Rotational Motion", InitialTotalTime: 12.0 ,Weightage: 2.0, InitialRevisionIntervalDays: 3, Difficulty: 4.0, RemainingTime: 12.0, IsStudyCompleted: false},
     {ID: "PH006", Subject: "Physics", Chapter: "Gravitation", InitialTotalTime: 10.0, Weightage: 2.0, InitialRevisionIntervalDays: 4, Difficulty: 3.5, RemainingTime: 10.0, IsStudyCompleted: false},
     {ID: "PH007", Subject: "Physics", Chapter: "Mechanical Properties of Solids", InitialTotalTime: 10.0, Weightage: 1.2, InitialRevisionIntervalDays: 5, Difficulty: 2.5, RemainingTime: 8.0, IsStudyCompleted: false},
     {ID: "PH008", Subject: "Physics", Chapter: "Mechanical Properties of Fluids", InitialTotalTime: 10.0, Weightage: 1.2, InitialRevisionIntervalDays: 5, Difficulty: 2.5, RemainingTime: 8.0, IsStudyCompleted: false},
@@ -234,23 +234,57 @@ func loadConfig() Config {
 	return config
 }
 
+// ------------------ Adaptive Learning: Performance State ------------------
+
+type PerformanceState struct {
+	TotalSessions     int     `json:"total_sessions"`
+	CompletedSessions int     `json:"completed_sessions"`
+	MissedSessions    int     `json:"missed_sessions"`
+	AverageFocusScore float64 `json:"average_focus_score"`
+	ConsistencyFactor float64 `json:"consistency_factor"` // 0.0 - 1.0
+}
+
+// Helper to save a struct as JSON
+func saveJSON(path string, v interface{}) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// Helper to load a JSON file into a struct (safe if file missing)
+func loadJSON(path string, v interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
 func saveConfig(c Config) {
 	data, _ := json.MarshalIndent(c, "", "  ")
 	os.WriteFile(CONFIG_FILE, data, 0644)
 }
-
 func loadState() (ScheduleState, bool) {
-	data, err := os.ReadFile(STATE_FILE)
-	if err != nil {
-		fmt.Println(ColorYellow + "[INIT] State file not found. Initializing ScheduleState from config." + ColorReset)
-		return initializeState(loadConfig()), false 
-	}
-	var state ScheduleState
-	if err := json.Unmarshal(data, &state); err != nil {
-		fmt.Println(ColorRed + "[ERROR] Failed to unmarshal state file. Re-initializing." + ColorReset)
-		return initializeState(loadConfig()), false 
-	}
-	return state, true 
+	os.MkdirAll("data", os.ModePerm)
+    data, err := os.ReadFile(STATE_FILE)
+    if err != nil {
+        fmt.Println(ColorYellow + "[INIT] State file not found. Initializing ScheduleState from config." + ColorReset)
+        state := initializeState(loadConfig())
+        saveState(state) // <-- important: save immediately
+        return state, false
+    }
+
+    var state ScheduleState
+    if err := json.Unmarshal(data, &state); err != nil {
+        fmt.Println(ColorRed + "[ERROR] Failed to unmarshal state file. Re-initializing." + ColorReset)
+        state := initializeState(loadConfig())
+        saveState(state) // <-- save after fixing corruption
+        return state, false
+    }
+
+    return state, true
 }
 
 func initializeState(c Config) ScheduleState {
@@ -563,6 +597,68 @@ func markMissedSessions() {
 	fmt.Println("[INFO] Marked past pending sessions as Missed.")
 }
 
+
+// updatePerformance scans past schedule files and updates the performance_state.json
+func updatePerformance() {
+	perfPath := "performance_state.json"
+	perf := PerformanceState{}
+	_ = loadJSON(perfPath, &perf)
+
+	files, err := os.ReadDir(SCHEDULE_DIR)
+	if err != nil {
+		fmt.Println("[WARN] Could not read schedule directory for performance update:", err)
+		return
+	}
+
+	today := time.Now().Truncate(24 * time.Hour)
+	totalObserved, completedObserved, missedObserved := 0, 0, 0
+
+	for _, f := range files {
+		if !strings.HasSuffix(f.Name(), ".txt") {
+			continue
+		}
+		dateStr := strings.TrimSuffix(f.Name(), ".txt")
+		planDate, err := time.Parse(TIME_FORMAT, dateStr)
+		if err != nil || !planDate.Before(today) {
+			continue
+		}
+
+		sessions, err := readDayPlan(planDate)
+		if err != nil {
+			continue
+		}
+
+		for _, s := range sessions {
+			if s.Type != "Study" && s.Type != "Revision" {
+				continue
+			}
+			totalObserved++
+			switch s.Status {
+			case "Completed":
+				completedObserved++
+			case "Missed":
+				missedObserved++
+			}
+		}
+	}
+
+	if totalObserved > 0 {
+		perf.TotalSessions += totalObserved
+		perf.CompletedSessions += completedObserved
+		perf.MissedSessions += missedObserved
+		perf.ConsistencyFactor = float64(perf.CompletedSessions) / float64(perf.TotalSessions)
+	} else if perf.TotalSessions == 0 {
+		perf.ConsistencyFactor = 1.0
+	}
+
+	if err := saveJSON(perfPath, &perf); err != nil {
+		fmt.Println("[WARN] Could not save performance state:", err)
+	} else {
+		fmt.Printf("[STATS] Performance updated. Consistency: %.1f%% (%d/%d done)\n",
+			perf.ConsistencyFactor*100.0, perf.CompletedSessions, perf.TotalSessions)
+	}
+}
+
 func generateSchedule() {
 	fmt.Println("--- Starting Schedule Generation ---")
 	markMissedSessions()
@@ -575,6 +671,26 @@ func generateSchedule() {
 		state.LastScheduledDate = realToday.Format(TIME_FORMAT)
 		saveState(state)
 		fmt.Printf("[FIX] Schedule path reset detected. Starting generation from today: %s\n", realToday.Format(TIME_FORMAT))
+	}
+
+	// --- Adaptive scaling: load performance (if present) and derive adapted values ---
+	perf := PerformanceState{}
+	_ = loadJSON("performance_state.json", &perf)
+	consistency := perf.ConsistencyFactor
+	if consistency <= 0 || math.IsNaN(consistency) {
+		consistency = 1.0
+	}
+	minScale := 0.8
+	maxScale := 1.15
+	scale := minScale + (maxScale-minScale)*consistency
+	adaptedDailyStudyHrsGlobal := rawConfig.DailyStudyHrs * scale
+	adaptedMaxSessionHrsGlobal := rawConfig.MaxSessionHrs * (0.9 + 0.2*consistency)
+	// Guard adapted values to reasonable bounds
+	if adaptedDailyStudyHrsGlobal <= 0 {
+		adaptedDailyStudyHrsGlobal = rawConfig.DailyStudyHrs
+	}
+	if adaptedMaxSessionHrsGlobal <= 0 {
+		adaptedMaxSessionHrsGlobal = rawConfig.MaxSessionHrs
 	}
 
 	allChapters := calculateQuotas(&state)
@@ -600,17 +716,29 @@ func generateSchedule() {
 	for currentDate.Before(syllabusEndDate.AddDate(0, 0, 1)) {
 		dailySessions := []Session{}
 		dailyProgressWT := 0.0
-		dailyTotalStudyHrs := rawConfig.DailyStudyHrs - (float64(rawConfig.DailyBufferMins) / 60.0)
+
+		// Use adapted daily study hours (scale by consistency) minus buffer
+		dailyTotalStudyHrs := adaptedDailyStudyHrsGlobal - (float64(rawConfig.DailyBufferMins) / 60.0)
+		if dailyTotalStudyHrs < 0.25 {
+			dailyTotalStudyHrs = math.Min(0.25, rawConfig.DailyStudyHrs-(float64(rawConfig.DailyBufferMins)/60.0))
+		}
+
+		// compute max sessions per day based on adapted max session length
+		maxSessionsPerDay := int(math.Max(1.0, math.Floor(dailyTotalStudyHrs/adaptedMaxSessionHrsGlobal)))
+		// ensure at least 1; desired min sessions
+		desiredMinSessions := 4
+		sessionCount := 0
+
 		hoursAssigned := 0.0
 		lastSubject := ""
 
 		if currentDate.Weekday() == rawConfig.WeeklyRestDay {
 			dailySessions = append(dailySessions, Session{
-				Subject: "Rest",
-				Chapter: rawConfig.RestDayActivity,
+				Subject:  "Rest",
+				Chapter:  rawConfig.RestDayActivity,
 				Duration: rawConfig.DailyStudyHrs,
-				Type: "Rest",
-				Status: "Pending",
+				Type:     "Rest",
+				Status:   "Pending",
 			})
 		} else {
 			// Handle due revisions first
@@ -618,23 +746,24 @@ func generateSchedule() {
 			sort.Slice(dueRevisions, func(i, j int) bool {
 				return dueRevisions[i].PriorityScore > dueRevisions[j].PriorityScore
 			})
-			for len(dueRevisions) > 0 && hoursAssigned < dailyTotalStudyHrs {
+			for len(dueRevisions) > 0 && hoursAssigned < dailyTotalStudyHrs && sessionCount < maxSessionsPerDay {
 				revChapter := dueRevisions[0]
 				revDuration := math.Min(REVISION_TIME_HRS, dailyTotalStudyHrs-hoursAssigned)
 				if revDuration <= 0.001 {
 					break
 				}
 				dailySessions = append(dailySessions, Session{
-					Subject: revChapter.Subject,
-					Chapter: fmt.Sprintf("%s (Revision #%d)", revChapter.Chapter, revChapter.RevisionCount+1),
-					Duration: revDuration,
+					Subject:   revChapter.Subject,
+					Chapter:   fmt.Sprintf("%s (Revision #%d)", revChapter.Chapter, revChapter.RevisionCount+1),
+					Duration:  revDuration,
 					ChapterID: revChapter.ID,
-					Type: "Revision",
-					Status: "Pending",
+					Type:      "Revision",
+					Status:    "Pending",
 				})
 				hoursAssigned += revDuration
 				lastSubject = revChapter.Subject
 				dueRevisions = dueRevisions[1:]
+				sessionCount++
 			}
 
 			// Filter active study chapters
@@ -649,11 +778,8 @@ func generateSchedule() {
 				return activeStudyChapters[i].PriorityScore > activeStudyChapters[j].PriorityScore
 			})
 
-			maxSessionsPerDay := int(math.Max(1.0, math.Floor(dailyTotalStudyHrs/rawConfig.MaxSessionHrs)))
-			desiredMinSessions := 4
-
 			// Main session allocation loop
-			for dailyProgressWT < state.DailyQuotaWT && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 {
+			for dailyProgressWT < state.DailyQuotaWT && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
 				foundChapterIndex := -1
 				for i, ch := range activeStudyChapters {
 					if ch.Subject != lastSubject {
@@ -671,7 +797,8 @@ func generateSchedule() {
 					break
 				}
 
-				sessionDuration := math.Min(rawConfig.MaxSessionHrs, currentChapter.RemainingTime)
+				// Use adapted max session limit
+				sessionDuration := math.Min(adaptedMaxSessionHrsGlobal, currentChapter.RemainingTime)
 				if sessionDuration > remainingDailyHrs {
 					sessionDuration = remainingDailyHrs
 				}
@@ -698,6 +825,10 @@ func generateSchedule() {
 				lastSubject = currentChapter.Subject
 				currentChapter.RemainingTime -= sessionDuration
 
+				// update counters & state
+				sessionCount++
+				state.Workload[currentChapter.ID] = *currentChapter
+
 				if currentChapter.RemainingTime <= 0.001 {
 					currentChapter.IsStudyCompleted = true
 					currentChapter.NextRevisionDate = currentDate.AddDate(0, 0, currentChapter.InitialRevisionIntervalDays).Format(TIME_FORMAT)
@@ -705,8 +836,8 @@ func generateSchedule() {
 				}
 			}
 
-			// Ensure at least 4 sessions per day if time allows
-			for len(dailySessions) < desiredMinSessions && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 {
+			// Ensure at least desiredMinSessions exist if time and chapters allow
+			for len(dailySessions) < desiredMinSessions && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
 				ch := activeStudyChapters[0]
 				remainingDailyHrs := dailyTotalStudyHrs - hoursAssigned
 				filler := math.Min(0.5, remainingDailyHrs)
@@ -728,6 +859,7 @@ func generateSchedule() {
 				})
 				hoursAssigned += filler
 				ch.RemainingTime -= filler
+				sessionCount++
 				if ch.RemainingTime <= 0.001 {
 					ch.IsStudyCompleted = true
 					ch.NextRevisionDate = currentDate.AddDate(0, 0, ch.InitialRevisionIntervalDays).Format(TIME_FORMAT)
@@ -735,13 +867,13 @@ func generateSchedule() {
 				}
 			}
 
-			// Add buffer session
+			// Add buffer session (doesn't count against sessionCount)
 			dailySessions = append(dailySessions, Session{
-				Subject: "Buffer",
-				Chapter: "Recovery/Review",
+				Subject:  "Buffer",
+				Chapter:  "Recovery/Review",
 				Duration: float64(rawConfig.DailyBufferMins) / 60.0,
-				Type: "Buffer",
-				Status: "Pending",
+				Type:     "Buffer",
+				Status:   "Pending",
 			})
 		}
 
@@ -758,7 +890,11 @@ func generateSchedule() {
 	saveState(state)
 	fmt.Println("\n--- Schedule Generation Complete ---")
 	fmt.Printf("Syllabus plans saved in the '%s/' directory until %s.\n", SCHEDULE_DIR, syllabusEndDate.Format(TIME_FORMAT))
+
+	// Refresh performance after generation
+	updatePerformance()
 }
+
 func processMissedSessionsForDate(date time.Time) ([]Session, error) {
 	sessions, err := readDayPlan(date)
 	if err != nil {
@@ -1514,6 +1650,18 @@ func runMainMenu() {
 			if err := runDownloader(); err != nil {
 				fmt.Fprintf(os.Stderr, "\n[CRITICAL ERROR] Downloader failed: %v\n", err)
 			}
+		case "6" :
+				perf := PerformanceState{}
+	if err := loadJSON("performance_state.json", &perf); err != nil {
+		fmt.Println("[INFO] No performance data yet. Run some sessions first.")
+	} else {
+		fmt.Println("\n--- PERFORMANCE REPORT ---")
+		fmt.Printf("Total Sessions Tracked : %d\n", perf.TotalSessions)
+		fmt.Printf("Completed Sessions     : %d\n", perf.CompletedSessions)
+		fmt.Printf("Missed Sessions        : %d\n", perf.MissedSessions)
+		fmt.Printf("Consistency Factor     : %.1f%%\n", perf.ConsistencyFactor*100.0)
+		fmt.Printf("Average Focus (score)  : %.2f\n\n", perf.AverageFocusScore)
+	}
 		case "q":
 			stopMusic()
 			fmt.Println("\nExiting application. Goodbye! 👋")
