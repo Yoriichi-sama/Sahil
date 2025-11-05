@@ -313,7 +313,14 @@ func saveState(s ScheduleState) {
 func deleteScheduleState() {
 	os.Remove(STATE_FILE)
 }
-
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
 func dayPlanFilePath(date time.Time) string {
 	return filepath.Join(SCHEDULE_DIR, date.Format(TIME_FORMAT)+".txt")
 }
