@@ -71,6 +71,7 @@ type ScheduleState struct {
 	TotalWeightedWorkload float64                    `json:"total_weighted_workload"`
 	TotalRemainingTime    float64                    `json:"total_remaining_time"`
 	NetStudyDays          int                        `json:"net_study_days"`
+	LastSubjects []string `json:"last_subjects"`
 }
 
 type Session struct {
