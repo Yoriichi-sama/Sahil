@@ -674,7 +674,7 @@ func generateSchedule() {
 		fmt.Printf("[FIX] Schedule path reset detected. Starting generation from today: %s\n", realToday.Format(TIME_FORMAT))
 	}
 
-	// --- Adaptive scaling: load performance (if present) and derive adapted values ---
+	// --- Adaptive scaling ---
 	perf := PerformanceState{}
 	_ = loadJSON("performance_state.json", &perf)
 	consistency := perf.ConsistencyFactor
@@ -686,7 +686,6 @@ func generateSchedule() {
 	scale := minScale + (maxScale-minScale)*consistency
 	adaptedDailyStudyHrsGlobal := rawConfig.DailyStudyHrs * scale
 	adaptedMaxSessionHrsGlobal := rawConfig.MaxSessionHrs * (0.9 + 0.2*consistency)
-
 	if adaptedDailyStudyHrsGlobal <= 0 {
 		adaptedDailyStudyHrsGlobal = rawConfig.DailyStudyHrs
 	}
@@ -714,40 +713,27 @@ func generateSchedule() {
 		}
 	}
 
+	lastSubjects := map[string]bool{}
+	if len(state.LastSubjects) > 0 {
+		for _, s := range state.LastSubjects {
+			lastSubjects[s] = true
+		}
+	}
+
 	for currentDate.Before(syllabusEndDate.AddDate(0, 0, 1)) {
 		dailySessions := []Session{}
 		dailyProgressWT := 0.0
 
-		// --- Pick 2 random subjects for today ---
-		subjects := []string{"Physics", "Chemistry", "Biology"}
-		rand.Seed(time.Now().UnixNano())
-		rand.Shuffle(len(subjects), func(i, j int) { subjects[i], subjects[j] = subjects[j], subjects[i] })
-		todaySubjects := subjects[:2]
-
-		// Avoid repeating yesterday’s subjects if available
-		if len(state.LastSubjects) == 2 {
-			attempts := 0
-			for reflect.DeepEqual(todaySubjects, state.LastSubjects) && attempts < 5 {
-				rand.Shuffle(len(subjects), func(i, j int) { subjects[i], subjects[j] = subjects[j], subjects[i] })
-				todaySubjects = subjects[:2]
-				attempts++
-			}
-		}
-		state.LastSubjects = todaySubjects
-		saveState(state)
-
-		fmt.Printf("[INFO] Today's subjects: %s and %s\n", todaySubjects[0], todaySubjects[1])
-
+		// Base hours for the day
 		dailyTotalStudyHrs := adaptedDailyStudyHrsGlobal - (float64(rawConfig.DailyBufferMins) / 60.0)
 		if dailyTotalStudyHrs < 0.25 {
 			dailyTotalStudyHrs = math.Min(0.25, rawConfig.DailyStudyHrs-(float64(rawConfig.DailyBufferMins)/60.0))
 		}
 
 		maxSessionsPerDay := int(math.Max(1.0, math.Floor(dailyTotalStudyHrs/adaptedMaxSessionHrsGlobal)))
-		desiredMinSessions := 4
 		sessionCount := 0
 		hoursAssigned := 0.0
-		lastSubject := ""
+		todaySubjects := map[string]bool{}
 
 		if currentDate.Weekday() == rawConfig.WeeklyRestDay {
 			dailySessions = append(dailySessions, Session{
@@ -758,11 +744,11 @@ func generateSchedule() {
 				Status:   "Pending",
 			})
 		} else {
+			// Handle due revisions first
 			dueRevisions := getDueRevisions(state, currentDate)
 			sort.Slice(dueRevisions, func(i, j int) bool {
 				return dueRevisions[i].PriorityScore > dueRevisions[j].PriorityScore
 			})
-
 			for len(dueRevisions) > 0 && hoursAssigned < dailyTotalStudyHrs && sessionCount < maxSessionsPerDay {
 				revChapter := dueRevisions[0]
 				revDuration := math.Min(REVISION_TIME_HRS, dailyTotalStudyHrs-hoursAssigned)
@@ -778,55 +764,63 @@ func generateSchedule() {
 					Status:    "Pending",
 				})
 				hoursAssigned += revDuration
-				lastSubject = revChapter.Subject
+				todaySubjects[revChapter.Subject] = true
 				dueRevisions = dueRevisions[1:]
 				sessionCount++
 			}
 
-			// --- Filter active chapters to only today's subjects ---
+			// Filter active chapters
 			var currentActive []*ChapterWorkload
 			for _, ch := range activeStudyChapters {
-				if !ch.IsStudyCompleted && ch.RemainingTime > 0.001 &&
-					(ch.Subject == todaySubjects[0] || ch.Subject == todaySubjects[1]) {
+				if !ch.IsStudyCompleted && ch.RemainingTime > 0.001 {
 					currentActive = append(currentActive, ch)
 				}
 			}
 			activeStudyChapters = currentActive
-
 			sort.Slice(activeStudyChapters, func(i, j int) bool {
 				return activeStudyChapters[i].PriorityScore > activeStudyChapters[j].PriorityScore
 			})
 
-			// --- Main session allocation loop ---
-			for dailyProgressWT < state.DailyQuotaWT && hoursAssigned < dailyTotalStudyHrs &&
-				len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
+			// Pick 2 unique subjects for the day, not in lastSubjects
+			allSubjects := []string{}
+			for _, ch := range activeStudyChapters {
+				if !contains(allSubjects, ch.Subject) && !lastSubjects[ch.Subject] {
+					allSubjects = append(allSubjects, ch.Subject)
+				}
+			}
+			if len(allSubjects) < 2 {
+				// fallback if not enough unique subjects
+				for _, ch := range activeStudyChapters {
+					if !contains(allSubjects, ch.Subject) {
+						allSubjects = append(allSubjects, ch.Subject)
+					}
+				}
+			}
+			rand.Shuffle(len(allSubjects), func(i, j int) { allSubjects[i], allSubjects[j] = allSubjects[j], allSubjects[i] })
+			if len(allSubjects) > 2 {
+				allSubjects = allSubjects[:2]
+			}
 
+			// Assign study sessions for selected subjects
+			for dailyProgressWT < state.DailyQuotaWT && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
 				foundChapterIndex := -1
+				maxP := -1e18
 				for i, ch := range activeStudyChapters {
-					if ch.Subject != lastSubject {
+					if contains(allSubjects, ch.Subject) && ch.PriorityScore > maxP {
+						maxP = ch.PriorityScore
 						foundChapterIndex = i
-						break
 					}
 				}
 				if foundChapterIndex == -1 {
-					foundChapterIndex = 0
-				}
-
-				currentChapter := activeStudyChapters[foundChapterIndex]
-				remainingDailyHrs := dailyTotalStudyHrs - hoursAssigned
-				if remainingDailyHrs <= 0.001 {
 					break
 				}
-
+				currentChapter := activeStudyChapters[foundChapterIndex]
 				sessionDuration := math.Min(adaptedMaxSessionHrsGlobal, currentChapter.RemainingTime)
-				if sessionDuration > remainingDailyHrs {
-					sessionDuration = remainingDailyHrs
+				if sessionDuration > (dailyTotalStudyHrs - hoursAssigned) {
+					sessionDuration = dailyTotalStudyHrs - hoursAssigned
 				}
 				if sessionDuration <= 0.001 {
 					activeStudyChapters = append(activeStudyChapters[:foundChapterIndex], activeStudyChapters[foundChapterIndex+1:]...)
-					if len(activeStudyChapters) == 0 {
-						break
-					}
 					continue
 				}
 
@@ -842,9 +836,8 @@ func generateSchedule() {
 				sessionWT := sessionDuration * (1 + currentChapter.Difficulty/5.0) * (currentChapter.Weightage * 2.0)
 				dailyProgressWT += sessionWT
 				hoursAssigned += sessionDuration
-				lastSubject = currentChapter.Subject
+				todaySubjects[currentChapter.Subject] = true
 				currentChapter.RemainingTime -= sessionDuration
-
 				sessionCount++
 				state.Workload[currentChapter.ID] = *currentChapter
 
@@ -855,40 +848,7 @@ func generateSchedule() {
 				}
 			}
 
-			// --- Ensure at least desiredMinSessions if time and chapters allow ---
-			for len(dailySessions) < desiredMinSessions && hoursAssigned < dailyTotalStudyHrs &&
-				len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
-
-				ch := activeStudyChapters[0]
-				remainingDailyHrs := dailyTotalStudyHrs - hoursAssigned
-				filler := math.Min(0.5, remainingDailyHrs)
-				filler = math.Min(filler, ch.RemainingTime)
-				if filler <= 0.001 {
-					activeStudyChapters = activeStudyChapters[1:]
-					if len(activeStudyChapters) == 0 {
-						break
-					}
-					continue
-				}
-				dailySessions = append(dailySessions, Session{
-					Subject:   ch.Subject,
-					Chapter:   ch.Chapter,
-					Duration:  filler,
-					ChapterID: ch.ID,
-					Type:      "Study",
-					Status:    "Pending",
-				})
-				hoursAssigned += filler
-				ch.RemainingTime -= filler
-				sessionCount++
-				if ch.RemainingTime <= 0.001 {
-					ch.IsStudyCompleted = true
-					ch.NextRevisionDate = currentDate.AddDate(0, 0, ch.InitialRevisionIntervalDays).Format(TIME_FORMAT)
-					activeStudyChapters = activeStudyChapters[1:]
-				}
-			}
-
-			// --- Add buffer session ---
+			// Add buffer
 			dailySessions = append(dailySessions, Session{
 				Subject:  "Buffer",
 				Chapter:  "Recovery/Review",
@@ -896,6 +856,12 @@ func generateSchedule() {
 				Type:     "Buffer",
 				Status:   "Pending",
 			})
+		}
+
+		// Update LastSubjects for next day
+		state.LastSubjects = []string{}
+		for s := range todaySubjects {
+			state.LastSubjects = append(state.LastSubjects, s)
 		}
 
 		for _, chPtr := range activeStudyChapters {
@@ -909,8 +875,7 @@ func generateSchedule() {
 
 	saveState(state)
 	fmt.Println("\n--- Schedule Generation Complete ---")
-	fmt.Printf("Syllabus plans saved in the '%s/' directory until %s.\n", SCHEDULE_DIR, syllabusEndDate.Format(TIME_FORMAT))
-
+	fmt.Printf("Syllabus plans saved in '%s/' until %s.\n", SCHEDULE_DIR, syllabusEndDate.Format(TIME_FORMAT))
 	updatePerformance()
 }
 func processMissedSessionsForDate(date time.Time) ([]Session, error) {
