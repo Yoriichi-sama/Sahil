@@ -685,7 +685,7 @@ func generateSchedule() {
 	scale := minScale + (maxScale-minScale)*consistency
 	adaptedDailyStudyHrsGlobal := rawConfig.DailyStudyHrs * scale
 	adaptedMaxSessionHrsGlobal := rawConfig.MaxSessionHrs * (0.9 + 0.2*consistency)
-	// Guard adapted values to reasonable bounds
+
 	if adaptedDailyStudyHrsGlobal <= 0 {
 		adaptedDailyStudyHrsGlobal = rawConfig.DailyStudyHrs
 	}
@@ -717,18 +717,34 @@ func generateSchedule() {
 		dailySessions := []Session{}
 		dailyProgressWT := 0.0
 
-		// Use adapted daily study hours (scale by consistency) minus buffer
+		// --- Pick 2 random subjects for today ---
+		subjects := []string{"Physics", "Chemistry", "Biology"}
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(subjects), func(i, j int) { subjects[i], subjects[j] = subjects[j], subjects[i] })
+		todaySubjects := subjects[:2]
+
+		// Avoid repeating yesterday’s subjects if available
+		if len(state.LastSubjects) == 2 {
+			attempts := 0
+			for reflect.DeepEqual(todaySubjects, state.LastSubjects) && attempts < 5 {
+				rand.Shuffle(len(subjects), func(i, j int) { subjects[i], subjects[j] = subjects[j], subjects[i] })
+				todaySubjects = subjects[:2]
+				attempts++
+			}
+		}
+		state.LastSubjects = todaySubjects
+		saveState(state)
+
+		fmt.Printf("[INFO] Today's subjects: %s and %s\n", todaySubjects[0], todaySubjects[1])
+
 		dailyTotalStudyHrs := adaptedDailyStudyHrsGlobal - (float64(rawConfig.DailyBufferMins) / 60.0)
 		if dailyTotalStudyHrs < 0.25 {
 			dailyTotalStudyHrs = math.Min(0.25, rawConfig.DailyStudyHrs-(float64(rawConfig.DailyBufferMins)/60.0))
 		}
 
-		// compute max sessions per day based on adapted max session length
 		maxSessionsPerDay := int(math.Max(1.0, math.Floor(dailyTotalStudyHrs/adaptedMaxSessionHrsGlobal)))
-		// ensure at least 1; desired min sessions
 		desiredMinSessions := 4
 		sessionCount := 0
-
 		hoursAssigned := 0.0
 		lastSubject := ""
 
@@ -741,11 +757,11 @@ func generateSchedule() {
 				Status:   "Pending",
 			})
 		} else {
-			// Handle due revisions first
 			dueRevisions := getDueRevisions(state, currentDate)
 			sort.Slice(dueRevisions, func(i, j int) bool {
 				return dueRevisions[i].PriorityScore > dueRevisions[j].PriorityScore
 			})
+
 			for len(dueRevisions) > 0 && hoursAssigned < dailyTotalStudyHrs && sessionCount < maxSessionsPerDay {
 				revChapter := dueRevisions[0]
 				revDuration := math.Min(REVISION_TIME_HRS, dailyTotalStudyHrs-hoursAssigned)
@@ -766,20 +782,24 @@ func generateSchedule() {
 				sessionCount++
 			}
 
-			// Filter active study chapters
+			// --- Filter active chapters to only today's subjects ---
 			var currentActive []*ChapterWorkload
 			for _, ch := range activeStudyChapters {
-				if !ch.IsStudyCompleted && ch.RemainingTime > 0.001 {
+				if !ch.IsStudyCompleted && ch.RemainingTime > 0.001 &&
+					(ch.Subject == todaySubjects[0] || ch.Subject == todaySubjects[1]) {
 					currentActive = append(currentActive, ch)
 				}
 			}
 			activeStudyChapters = currentActive
+
 			sort.Slice(activeStudyChapters, func(i, j int) bool {
 				return activeStudyChapters[i].PriorityScore > activeStudyChapters[j].PriorityScore
 			})
 
-			// Main session allocation loop
-			for dailyProgressWT < state.DailyQuotaWT && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
+			// --- Main session allocation loop ---
+			for dailyProgressWT < state.DailyQuotaWT && hoursAssigned < dailyTotalStudyHrs &&
+				len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
+
 				foundChapterIndex := -1
 				for i, ch := range activeStudyChapters {
 					if ch.Subject != lastSubject {
@@ -797,7 +817,6 @@ func generateSchedule() {
 					break
 				}
 
-				// Use adapted max session limit
 				sessionDuration := math.Min(adaptedMaxSessionHrsGlobal, currentChapter.RemainingTime)
 				if sessionDuration > remainingDailyHrs {
 					sessionDuration = remainingDailyHrs
@@ -825,7 +844,6 @@ func generateSchedule() {
 				lastSubject = currentChapter.Subject
 				currentChapter.RemainingTime -= sessionDuration
 
-				// update counters & state
 				sessionCount++
 				state.Workload[currentChapter.ID] = *currentChapter
 
@@ -836,8 +854,10 @@ func generateSchedule() {
 				}
 			}
 
-			// Ensure at least desiredMinSessions exist if time and chapters allow
-			for len(dailySessions) < desiredMinSessions && hoursAssigned < dailyTotalStudyHrs && len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
+			// --- Ensure at least desiredMinSessions if time and chapters allow ---
+			for len(dailySessions) < desiredMinSessions && hoursAssigned < dailyTotalStudyHrs &&
+				len(activeStudyChapters) > 0 && sessionCount < maxSessionsPerDay {
+
 				ch := activeStudyChapters[0]
 				remainingDailyHrs := dailyTotalStudyHrs - hoursAssigned
 				filler := math.Min(0.5, remainingDailyHrs)
@@ -867,7 +887,7 @@ func generateSchedule() {
 				}
 			}
 
-			// Add buffer session (doesn't count against sessionCount)
+			// --- Add buffer session ---
 			dailySessions = append(dailySessions, Session{
 				Subject:  "Buffer",
 				Chapter:  "Recovery/Review",
@@ -882,7 +902,6 @@ func generateSchedule() {
 		}
 
 		writeDayPlan(currentDate, dailySessions)
-
 		currentDate = currentDate.AddDate(0, 0, 1)
 		state.LastScheduledDate = currentDate.Format(TIME_FORMAT)
 	}
@@ -891,10 +910,8 @@ func generateSchedule() {
 	fmt.Println("\n--- Schedule Generation Complete ---")
 	fmt.Printf("Syllabus plans saved in the '%s/' directory until %s.\n", SCHEDULE_DIR, syllabusEndDate.Format(TIME_FORMAT))
 
-	// Refresh performance after generation
 	updatePerformance()
 }
-
 func processMissedSessionsForDate(date time.Time) ([]Session, error) {
 	sessions, err := readDayPlan(date)
 	if err != nil {
